@@ -52,9 +52,9 @@ use crate::highlight::{
     HighlightRole, HighlightSpec, autosuggest_validate_from_history, highlight_shell,
     parse_text_face_for_highlight,
 };
+use crate::history::search::{HistorySearch, SearchDirection, SearchFlags, SearchType};
 use crate::history::{
-    History, HistorySearch, PersistenceMode, SearchDirection, SearchFlags, SearchType,
-    history_session_id, in_private_mode,
+    self, History, LocalHistoryItem, PersistenceMode, Provider, history_session_id, in_private_mode,
 };
 use crate::input_common::BackgroundColorQuery;
 use crate::input_common::CursorPositionQueryReason;
@@ -142,6 +142,7 @@ use nix::{
     },
     unistd::{getpgrp, getpid},
 };
+use std::time::SystemTime;
 use std::{
     borrow::Cow,
     cell::UnsafeCell,
@@ -405,8 +406,8 @@ pub fn reader_push<'a>(parser: &'a Parser, history_name: &wstr, conf: ReaderConf
     } else {
         InputData::new(inputfd, *parser.blocking_query_timeout.borrow())
     };
-    let hist = History::with_name(history_name);
-    hist.resolve_pending();
+    let hist = history::with_name(history_name);
+    // hist.resolve_pending(); // TODO is this needed?
     let data = ReaderData::new(input_data, hist, conf, reader_data_stack().is_empty());
     reader_data_stack().push(data);
     let data = current_data().unwrap();
@@ -434,7 +435,7 @@ pub fn fake_scoped_reader<'a>(parser: &'a Parser) -> impl ScopeGuarding<Target =
         inputfd,
         ..Default::default()
     };
-    let hist = History::with_name(L!(""));
+    let hist = history::with_name(L!(""));
     let input_data = InputData::new(inputfd, None);
     let data = ReaderData::new(input_data, hist, conf, reader_data_stack().is_empty());
     reader_data_stack().push(data);
@@ -497,7 +498,7 @@ pub struct CommandlineState {
     /// visual selection, or none if none
     pub selection: Option<Range<usize>>,
     /// current reader history, or null if not interactive
-    pub history: Option<Arc<History>>,
+    pub history: Option<Arc<History<Provider>>>, // TODO do we want Provider to be generic?
     /// pager is visible
     pub pager_mode: bool,
     /// pager already shows everything if possible
@@ -698,7 +699,7 @@ pub struct ReaderData {
     pub input_data: InputData,
     queued_repaint: bool,
     /// The history.
-    history: Arc<History>,
+    history: Arc<History<Provider>>,
     /// The history search.
     history_search: ReaderHistorySearch,
     /// In-pager history search.
@@ -878,7 +879,7 @@ fn read_i(parser: &Parser) {
         });
         event::fire_generic(parser, L!("fish_postexec").to_owned(), vec![command]);
         // Allow any pending history items to be returned in the history array.
-        data.history.resolve_pending();
+        // data.history.resolve_pending(); // TODO what did this do?
 
         // Make cursor visible. Every even vaguely used terminal agrees on this sequence.
         data.screen.write_command(DecsetShowCursor);
@@ -1066,7 +1067,7 @@ pub fn reader_change_history(name: &wstr) {
     };
 
     data.history.save();
-    data.history = History::with_name(name);
+    data.history = history::with_name(name);
     commandline_state_snapshot().history = Some(data.history.clone());
 }
 
@@ -1363,7 +1364,7 @@ fn reader_received_sighup() -> bool {
 impl ReaderData {
     fn new(
         input_data: InputData,
-        history: Arc<History>,
+        history: Arc<History<Provider>>,
         conf: ReaderConfig,
         is_top_level: bool,
     ) -> Pin<Box<Self>> {
@@ -5289,7 +5290,7 @@ fn get_autosuggestion_performer(
     parser: &Parser,
     command_line: WString,
     cursor_pos: usize,
-    history: Arc<History>,
+    history: Arc<History<Provider>>,
 ) -> impl FnOnce() -> AutosuggestionResult + use<> {
     let generation_count = read_generation_count();
     let vars = parser.vars().snapshot();
@@ -5391,10 +5392,11 @@ fn get_autosuggestion_performer(
                     continue;
                 };
 
+                let required_paths = history::required_paths_cache::get(full).unwrap_or_default();
                 if autosuggest_validate_from_history(
                     full,
                     suggested_range.clone(),
-                    item.get_required_paths(),
+                    &required_paths[..],
                     &working_directory,
                     &ctx,
                 ) {
@@ -5825,7 +5827,7 @@ pub(super) enum HistoryPagerInvocation {
 }
 
 fn history_pager_search(
-    history: &Arc<History>,
+    history: &Arc<History<Provider>>,
     direction: SearchDirection,
     motion: Option<SelectionMotion>,
     history_index: usize,
@@ -6422,10 +6424,6 @@ fn reader_shell_test(parser: &Parser, bstr: &wstr) -> Result<(), ParseIssue> {
 impl<'a> Reader<'a> {
     // Import history from older location (config path) if our current history is empty.
     fn import_history_if_necessary(&mut self) {
-        if self.history.is_empty() {
-            self.history.populate_from_config_path();
-        }
-
         // Import history from bash, etc. if our current history is still empty and is the default
         // history.
         if self.history.is_empty() && self.history.is_default() {
@@ -6482,15 +6480,20 @@ impl<'a> Reader<'a> {
         }
 
         // Mark this item as ephemeral if should_add_to_history says no (#615).
-        let mode = if !self.should_add_to_history(&text) {
-            PersistenceMode::Ephemeral
+        if !self.should_add_to_history(&text) {
+            self.history.add_local(
+                LocalHistoryItem::new(text, SystemTime::now(), PersistenceMode::Ephemeral),
+                &self.parser.variables,
+            );
         } else if in_private_mode(self.vars()) {
-            PersistenceMode::Memory
+            self.history.add_local(
+                LocalHistoryItem::new(text, SystemTime::now(), PersistenceMode::Memory),
+                &self.parser.variables,
+            );
         } else {
-            PersistenceMode::Disk
+            self.history
+                .add_shared(text, SystemTime::now(), &self.parser.variables)
         };
-        self.history
-            .add_pending_with_file_detection(&text, &self.parser.variables, mode);
     }
 
     /// Check if we have background jobs that we have not warned about.

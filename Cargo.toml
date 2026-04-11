@@ -34,6 +34,7 @@ fish-wcstringutil = { path = "crates/wcstringutil" }
 fish-widecharwidth = { path = "crates/widecharwidth" }
 fish-widestring = { path = "crates/widestring" }
 fish-wgetopt = { path = "crates/wgetopt" }
+fish-history-api = { path = "crates/history-api" }
 itertools = "0.14.0"
 libc = "0.2.177"
 # lru pulls in hashbrown by default, which uses a faster (though less DoS resistant) hashing algo.
@@ -117,6 +118,7 @@ fish-wcstringutil.workspace = true
 fish-wgetopt.workspace = true
 fish-widecharwidth.workspace = true
 fish-widestring.workspace = true
+fish-history-api.workspace = true
 itertools.workspace = true
 libc.workspace = true
 lru.workspace = true
@@ -186,6 +188,9 @@ localize-messages = ["dep:fish-gettext"]
 # desired. This happens when running tests via `cargo xtask check` and when calling
 # `build_tools/update_translations.fish`, so there should not be a need to enable it manually.
 gettext-extract = ["dep:fish-gettext-extraction"]
+# External history provider. Enabling this feature uses the dependency named `history_impl`
+# to select a history provider
+external-history = []
 
 # The following features are auto-detected by the build-script and should not be enabled manually.
 tsan = []

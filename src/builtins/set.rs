@@ -11,7 +11,7 @@ use crate::event;
 use crate::event::Event;
 use crate::expand::expand_escape_string;
 use crate::expand::expand_escape_variable;
-use crate::history::History;
+use crate::history;
 use crate::history::history_session_id;
 use crate::parse_execution::varname_error;
 use crate::parser::ParserEnvSetMode;
@@ -558,7 +558,7 @@ fn list(opts: &Options, parser: &Parser, streams: &mut IoStreams) -> BuiltinResu
         if !names_only {
             let mut val = WString::new();
             if opts.shorten_ok && key == "history" {
-                let history = History::with_name(&history_session_id(parser.vars()));
+                let history = history::with_name(&history_session_id(parser.vars()));
                 for i in 1..history.size() {
                     if val.len() >= 64 {
                         break;

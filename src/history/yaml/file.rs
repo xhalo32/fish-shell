@@ -1,14 +1,17 @@
 //! Implementation of the YAML-like history file format.
 
-use super::HistoryItem;
-use super::yaml_backend::{
-    decode_item_fish_2_0, escape_yaml_fish_2_0, offset_of_next_item_fish_2_0,
-};
 use crate::{
     flog::flog,
+    history::{
+        format::time_to_seconds,
+        yaml::yaml_backend::{
+            decode_item_fish_2_0, escape_yaml_fish_2_0, offset_of_next_item_fish_2_0,
+        },
+    },
     path::{DirRemoteness, path_get_data_remoteness},
     wutil::FileId,
 };
+use fish_history_api::HistoryItem;
 use fish_wcstringutil::wcs2bytes;
 use libc::{ENODEV, MAP_ANONYMOUS, MAP_FAILED, MAP_PRIVATE, PROT_READ, PROT_WRITE};
 use std::{
@@ -16,7 +19,7 @@ use std::{
     io::Read as _,
     ops::{Deref, DerefMut},
     os::fd::AsRawFd as _,
-    time::{SystemTime, UNIX_EPOCH},
+    time::SystemTime,
 };
 
 /// History file types.
@@ -281,31 +284,16 @@ impl TryFrom<MmapRegion> for RawHistoryFile {
     }
 }
 
-impl HistoryItem {
-    /// Write this history item to some writer.
-    pub fn write_to(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-        assert!(self.should_write_to_disk(), "Item should not be persisted");
+/// Write this history item to some writer.
+pub fn write_to(item: &HistoryItem, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+    let mut cmd = wcs2bytes(item.str());
+    escape_yaml_fish_2_0(&mut cmd);
+    writer.write_all(b"- cmd: ")?;
+    writer.write_all(&cmd)?;
+    writer.write_all(b"\n")?;
+    writeln!(writer, "  when: {}", time_to_seconds(item.get_timestamp()))?;
 
-        let mut cmd = wcs2bytes(self.str());
-        escape_yaml_fish_2_0(&mut cmd);
-        writer.write_all(b"- cmd: ")?;
-        writer.write_all(&cmd)?;
-        writer.write_all(b"\n")?;
-        writeln!(writer, "  when: {}", time_to_seconds(self.timestamp()))?;
-
-        let paths = self.get_required_paths();
-        if !paths.is_empty() {
-            writeln!(writer, "  paths:")?;
-            for path in paths {
-                let mut path = wcs2bytes(path);
-                escape_yaml_fish_2_0(&mut path);
-                writer.write_all(b"    - ")?;
-                writer.write_all(&path)?;
-                writer.write_all(b"\n")?;
-            }
-        }
-        Ok(())
-    }
+    Ok(())
 }
 
 /// Check if we should mmap the file.
@@ -313,17 +301,4 @@ impl HistoryItem {
 fn should_mmap() -> bool {
     // mmap only if we are known not-remote.
     path_get_data_remoteness() != DirRemoteness::Remote
-}
-
-pub fn time_to_seconds(ts: SystemTime) -> i64 {
-    match ts.duration_since(UNIX_EPOCH) {
-        Ok(d) => {
-            // after epoch
-            i64::try_from(d.as_secs()).unwrap()
-        }
-        Err(e) => {
-            // before epoch
-            -i64::try_from(e.duration().as_secs()).unwrap()
-        }
-    }
 }

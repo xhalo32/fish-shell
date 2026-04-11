@@ -275,6 +275,7 @@ dependencies = [
  "fish-gettext",
  "fish-gettext-extraction",
  "fish-gettext-mo-file-parser",
+ "fish-history-api",
  "fish-printf",
  "fish-tempfile",
  "fish-util",
@@ -379,6 +380,13 @@ dependencies = [
 [[package]]
 name = "fish-gettext-mo-file-parser"
 version = "0.0.0"
+
+[[package]]
+name = "fish-history-api"
+version = "0.0.0"
+dependencies = [
+ "fish-widestring",
+]
 
 [[package]]
 name = "fish-printf"

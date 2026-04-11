@@ -5,9 +5,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use fish_history_api::HistoryItem;
 use fish_widestring::subslice_position;
 
-use super::{HistoryItem, PersistenceMode};
 use crate::{common::bytes2wcstring, flog::flog};
 
 // Our history format is nearly-valid YAML (but isn't quite). Here it is:
@@ -181,6 +181,7 @@ pub fn decode_item_fish_2_0(mut data: &[u8]) -> Option<HistoryItem> {
                     .unwrap_or(0),
             );
         } else if *key == *b"paths" {
+            // TODO we ignore paths for now, the parser needs to skip over them
             // Read lines starting with " - " until we can't read any more.
             loop {
                 let (advance, line) = read_line(data);
@@ -202,8 +203,7 @@ pub fn decode_item_fish_2_0(mut data: &[u8]) -> Option<HistoryItem> {
         }
     }
 
-    let mut result = HistoryItem::new(cmd, when, PersistenceMode::Disk);
-    result.set_required_paths(paths);
+    let result = HistoryItem::new(cmd, when);
     Some(result)
 }
 

@@ -1,7 +1,9 @@
 //! Implementation of the history builtin.
 
-use crate::history::in_private_mode;
-use crate::history::{self, History, history_session_id};
+use std::time::SystemTime;
+
+use crate::history::search::SearchType;
+use crate::history::{self, history_session_id};
 use crate::reader::commandline_get_state;
 
 use super::prelude::*;
@@ -53,7 +55,7 @@ impl TryFrom<&wstr> for HistCmd {
 #[derive(Default)]
 struct HistoryCmdOpts {
     hist_cmd: HistCmd,
-    search_type: Option<history::SearchType>,
+    search_type: Option<SearchType>,
     show_time_format: Option<String>,
     max_items: Option<usize>,
     print_help: bool,
@@ -181,13 +183,13 @@ fn parse_cmd_opts(
                 opts.reverse = true;
             }
             'p' => {
-                opts.search_type = Some(history::SearchType::PrefixGlob);
+                opts.search_type = Some(SearchType::PrefixGlob);
             }
             'c' => {
-                opts.search_type = Some(history::SearchType::ContainsGlob);
+                opts.search_type = Some(SearchType::ContainsGlob);
             }
             'e' => {
-                opts.search_type = Some(history::SearchType::Exact);
+                opts.search_type = Some(SearchType::Exact);
             }
             't' => {
                 opts.show_time_format = Some(w.woptarg.unwrap_or(L!("# %c%n")).to_string());
@@ -261,7 +263,7 @@ pub fn history(parser: &Parser, streams: &mut IoStreams, args: &mut [&wstr]) -> 
     // from webconfig.py.
     let history = commandline_get_state(true)
         .history
-        .unwrap_or_else(|| History::with_name(&history_session_id(parser.vars())));
+        .unwrap_or_else(|| history::with_name(&history_session_id(parser.vars())));
 
     // If a history command hasn't already been specified via a flag check the first word.
     // Note that this can be simplified after we eliminate allowing subcommands as flags.
@@ -285,8 +287,7 @@ pub fn history(parser: &Parser, streams: &mut IoStreams, args: &mut [&wstr]) -> 
             if !history.search(
                 parser,
                 streams,
-                opts.search_type
-                    .unwrap_or(history::SearchType::ContainsGlob),
+                opts.search_type.unwrap_or(SearchType::ContainsGlob),
                 args,
                 opts.show_time_format.as_deref(),
                 opts.max_items.unwrap_or(usize::MAX),
@@ -303,8 +304,7 @@ pub fn history(parser: &Parser, streams: &mut IoStreams, args: &mut [&wstr]) -> 
             // TODO: Move this code to the history module and support the other search types
             // including case-insensitive matches. At this time we expect the non-exact deletions to
             // be handled only by the history function's interactive delete feature.
-            if opts.search_type.unwrap_or(history::SearchType::Exact) != history::SearchType::Exact
-            {
+            if opts.search_type.unwrap_or(SearchType::Exact) != SearchType::Exact {
                 streams
                     .err
                     .appendln(wgettext!("builtin history delete only supports --exact"));
@@ -329,25 +329,27 @@ pub fn history(parser: &Parser, streams: &mut IoStreams, args: &mut [&wstr]) -> 
             history.save();
         }
         HistCmd::ClearSession => {
-            if check_for_unexpected_hist_args(&opts, cmd, args, streams) {
-                return Err(STATUS_INVALID_ARGS);
-            }
-            history.clear_session();
-            history.save();
+            // TODO what should clear_session do? previously it moved new_items into deleted_items. How should we get the same behavior with the new API?
+            // if check_for_unexpected_hist_args(&opts, cmd, args, streams) {
+            //     return Err(STATUS_INVALID_ARGS);
+            // }
+            // history.clear_session();
+            // history.save();
         }
         HistCmd::Merge => {
-            if check_for_unexpected_hist_args(&opts, cmd, args, streams) {
-                return Err(STATUS_INVALID_ARGS);
-            }
+            // TODO YAMLHistory has incorporate_external_changes. How should we implement it through the API?
+            // if check_for_unexpected_hist_args(&opts, cmd, args, streams) {
+            //     return Err(STATUS_INVALID_ARGS);
+            // }
 
-            if in_private_mode(parser.vars()) {
-                streams.err.appendln(&wgettext_fmt!(
-                    "%s: can't merge history in private mode",
-                    cmd
-                ));
-                return Err(STATUS_INVALID_ARGS);
-            }
-            history.incorporate_external_changes();
+            // if in_private_mode(parser.vars()) {
+            //     streams.err.appendln(&wgettext_fmt!(
+            //         "%s: can't merge history in private mode",
+            //         cmd
+            //     ));
+            //     return Err(STATUS_INVALID_ARGS);
+            // }
+            // history.incorporate_external_changes();
         }
         HistCmd::Save => {
             if check_for_unexpected_hist_args(&opts, cmd, args, streams) {
@@ -357,7 +359,7 @@ pub fn history(parser: &Parser, streams: &mut IoStreams, args: &mut [&wstr]) -> 
         }
         HistCmd::Append => {
             for &arg in args {
-                history.add_commandline(arg.to_owned());
+                history.add_shared_no_file_detection(arg.to_owned(), SystemTime::now());
             }
         }
     }

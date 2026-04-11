@@ -1,6 +1,7 @@
 //! Encapsulation of the reader's history search functionality.
 
-use crate::history::{self, History, HistorySearch, SearchDirection, SearchFlags, SearchType};
+use crate::history::search::{HistorySearch, SearchDirection, SearchFlags, SearchType};
+use crate::history::{History, Provider};
 use crate::parse_constants::SourceRange;
 use crate::prelude::*;
 use crate::tokenizer::{TOK_ACCEPT_UNFINISHED, TokenType, Tokenizer};
@@ -10,11 +11,11 @@ use std::ops::Range;
 use std::sync::Arc;
 
 // Make the search case-insensitive unless we have an uppercase character.
-pub fn smartcase_flags(query: &wstr) -> history::SearchFlags {
+pub fn smartcase_flags(query: &wstr) -> SearchFlags {
     if query == query.to_lowercase() {
-        history::SearchFlags::IGNORE_CASE
+        SearchFlags::IGNORE_CASE
     } else {
-        history::SearchFlags::default()
+        SearchFlags::default()
     }
 }
 
@@ -53,7 +54,7 @@ pub struct ReaderHistorySearch {
     mode: SearchMode,
 
     /// Our history search itself.
-    search: Option<HistorySearch>,
+    search: Option<HistorySearch<Provider>>,
 
     /// The ordered list of matches. This may grow long.
     matches: Vec<SearchMatch>,
@@ -158,7 +159,7 @@ impl ReaderHistorySearch {
     pub fn reset_to_mode(
         &mut self,
         text: WString,
-        hist: Arc<History>,
+        hist: Arc<History<Provider>>,
         mode: SearchMode,
         token_offset: usize,
     ) {
@@ -282,11 +283,11 @@ impl ReaderHistorySearch {
         false
     }
 
-    fn search(&self) -> &HistorySearch {
+    fn search(&self) -> &HistorySearch<Provider> {
         self.search.as_ref().unwrap()
     }
 
-    fn search_mut(&mut self) -> &mut HistorySearch {
+    fn search_mut(&mut self) -> &mut HistorySearch<Provider> {
         self.search.as_mut().unwrap()
     }
 }

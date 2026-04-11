@@ -14,7 +14,7 @@ use crate::expand::{
 use crate::function;
 use crate::future_feature_flags::{FeatureFlag, feature_test};
 use crate::highlight::file_tester::FileTester;
-use crate::history::all_paths_are_valid;
+use crate::history::path_utils::all_paths_are_valid;
 use crate::operation_context::OperationContext;
 use crate::parse_constants::{
     ParseKeyword, ParseTokenType, ParseTreeFlags, SourceRange, StatementDecoration,
